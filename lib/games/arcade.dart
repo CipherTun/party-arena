@@ -988,7 +988,7 @@ class BrickBreakerGame extends ArcadeGame {
   BrickBreakerGame({required super.humans});
   double paddle = 0, bx = 0, by = 0, vx = 12, vy = -18;
   int lives = 3;
-  final removed = <int>{};
+  final brokenBricks = <int>{};
   double get br => min(hw * .035, hh * .025);
   Offset brick(int i) => Offset(-hw * .82 + (i % 6) * hw * .32, -hh * .63 + (i ~/ 6) * hh * .11);
 
@@ -1002,7 +1002,7 @@ class BrickBreakerGame extends ArcadeGame {
   void paintGame(Canvas c) {
     text(c, 'BRICK BREAKER', Offset(0, -hh + 3));
     for (var i = 0; i < 24; i++) {
-      if (removed.contains(i)) continue;
+      if (brokenBricks.contains(i)) continue;
       c.drawRRect(
           RRect.fromRectAndRadius(Rect.fromCenter(center: brick(i), width: hw * .27, height: hh * .075), const Radius.circular(.6)),
           Paint()..color = playerColors[i % 4]);
@@ -1032,10 +1032,10 @@ class BrickBreakerGame extends ArcadeGame {
       vy = vy.abs();
     }
     for (var i = 0; i < 24; i++) {
-      if (removed.contains(i)) continue;
+      if (brokenBricks.contains(i)) continue;
       final b = brick(i);
       if ((bx - b.dx).abs() < hw * .135 + br && (by - b.dy).abs() < hh * .0375 + br) {
-        removed.add(i);
+        brokenBricks.add(i);
         final fromSide = (bx - b.dx).abs() / (hw * .135) > (by - b.dy).abs() / (hh * .0375);
         if (fromSide) {
           vx = -vx;
@@ -1057,7 +1057,7 @@ class BrickBreakerGame extends ArcadeGame {
       vy = -18;
       if (lives <= 0) return end(1);
     }
-    if (removed.length >= 24) end(0);
+    if (brokenBricks.length >= 24) end(0);
   }
 }
 

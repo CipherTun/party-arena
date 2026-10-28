@@ -79,7 +79,7 @@ abstract class MiniGame extends Forge2DGame {
   double get hw => area.x / 2;
   double get hh => area.y / 2;
   bool get over => winner.value != null;
-  bool get ready => _built && blobs.every((b) => b.isLoaded);
+  bool get isReady => _built && blobs.every((b) => b.isLoaded);
 
   @override
   Color backgroundColor() => const Color(0xFF0F1A24);
@@ -102,7 +102,7 @@ abstract class MiniGame extends Forge2DGame {
   @override
   void update(double dt) {
     super.update(dt);
-    if (!ready || over) return;
+    if (!isReady || over) return;
     tick(min(dt, 1 / 30));
   }
 
