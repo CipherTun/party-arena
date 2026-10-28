@@ -1,6 +1,6 @@
 import 'dart:math';
-import 'dart:ui';
-import 'package:flutter/painting.dart';
+import 'dart:ui' hide TextStyle;
+import 'package:flutter/painting.dart' show TextPainter, TextSpan, TextStyle;
 import 'package:flame_forge2d/flame_forge2d.dart';
 import '../core.dart';
 
@@ -31,11 +31,11 @@ class QuickTapGame extends ArcadeGame {
 
 class ReactionGame extends ArcadeGame {
   ReactionGame({required super.humans});
-  double wait=1.5, elapsed=0, bot=.35; bool go=false; final times=<double?>[null,null]; final early=[false,false];
+  late double wait=1.5+rng.nextDouble()*2.5; double elapsed=0, bot=.35; bool go=false; final times=<double?>[null,null]; final early=[false,false];
   @override void paintGame(Canvas c){c.drawCircle(Offset.zero,min(hw,hh)*.34,Paint()..color=go?const Color(0xFF36D477):const Color(0xFFB84242));text(c,go?'TAP!':'WAIT',Offset.zero,size:4);text(c,'REACTION DUEL',Offset(0,-hh+4));text(c,early[0]?'FALSE START':times[0]==null?'BLUE':'${(times[0]!*1000).round()} ms',Offset(0,hh*.55),color:playerColors[0]);text(c,early[1]?'FALSE START':times[1]==null?'ORANGE':'${(times[1]!*1000).round()} ms',Offset(0,-hh*.55),color:playerColors[1]);}
   @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||times[p]!=null||early[p])return;if(!go){early[p]=true;}else{times[p]=elapsed;} _finishIfReady();}
   void _finishIfReady(){if(early[0]||early[1]){if(early[0]&&early[1])end(null);else end(early[0]?1:0);return;}if(times[0]!=null&&times[1]!=null)end(times[0]==times[1]?null:times[0]!<times[1]! ? 0:1);}
-  @override void tick(double dt){elapsed+=dt;if(!go){wait-=dt;if(wait<=0)go=true;}else if(isBot(1)&&times[1]==null){bot-=dt;if(bot<=0){times[1]=elapsed;_finishIfReady();}}}
+  @override void tick(double dt){if(!go){wait-=dt;if(wait<=0){go=true;elapsed=0;bot=.25+rng.nextDouble()*.25;}return;}elapsed+=dt;if(isBot(1)&&times[1]==null){bot-=dt;if(bot<=0){times[1]=elapsed;_finishIfReady();}}if(elapsed>3){times[0]??=3.0;times[1]??=3.0;_finishIfReady();}}
 }
 
 class ColorMatchGame extends ArcadeGame {
@@ -49,27 +49,146 @@ class ColorMatchGame extends ArcadeGame {
 }
 
 class WhackGame extends ArcadeGame {
-  WhackGame({required super.humans}); int active=0;final score=[0,0];double change=.7,left=20;
-  @override void paintGame(Canvas c){text(c,'WHACK-A-DOT',Offset(0,-hh+3));for(int i=0;i<6;i++){final p=Offset((i%3-1)*hw*.48,(i<3?-1:1)*hh*.22);c.drawCircle(p,min(hw*.12,hh*.1),Paint()..color=i==active?const Color(0xFFFFD54F):const Color(0xFF334958));if(i==active)c.drawCircle(p,min(hw*.05,hh*.04),Paint()..color=const Color(0xFF17232C));}text(c,'${score[1]}  -  ${score[0]}',Offset(0,0),size:3);text(c,'${left.ceil()}s',Offset(0,hh-4));}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0)return;final col=((w.x/(hw*.96)+1)*1.5).floor().clamp(0,2).toInt(),row=w.y<0?0:1;if(row*3+col==active){score[p]++;active=rng.nextInt(6);change=.6;}}
-  @override void tick(double dt){left-=dt;change-=dt;if(change<=0){active=rng.nextInt(6);change=.6+rng.nextDouble()*.5;}if(isBot(1)&&rng.nextDouble()<dt*.9)score[1]++;if(left<=0)end(score[0]==score[1]?null:score[0]>score[1]?0:1);}
+  WhackGame({required super.humans});
+  final active = [0, 0], score = [0, 0], change = [.7, .9];
+  double left = 20;
+  double get dotR => min(hw * .13, hh * .09);
+  Offset dot(int p, int i) =>
+      Offset((i % 3 - 1) * hw * .5, (p == 0 ? 1 : -1) * hh * .45 + (i < 3 ? -1 : 1) * hh * .12);
+  int _pick(int p) {
+    var v = rng.nextInt(6);
+    if (v == active[p]) v = (v + 1) % 6;
+    return v;
+  }
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'WHACK-A-DOT', Offset(0, -hh + 3));
+    for (var p = 0; p < 2; p++) {
+      for (var i = 0; i < 6; i++) {
+        final on = i == active[p];
+        c.drawCircle(dot(p, i), dotR, Paint()..color = on ? playerColors[p] : const Color(0xFF334958));
+        if (on) c.drawCircle(dot(p, i), dotR * .4, Paint()..color = const Color(0xFF17232C));
+      }
+      text(c, '${score[p]}', Offset(0, p == 0 ? hh * .2 : -hh * .2), size: 4, color: playerColors[p]);
+    }
+    text(c, '${left.ceil()}s', Offset(0, hh - 3));
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase != 0) return;
+    if ((Offset(w.x, w.y) - dot(p, active[p])).distance < dotR * 1.7) {
+      score[p]++;
+      active[p] = _pick(p);
+      change[p] = .7;
+    }
+  }
+
+  @override
+  void tick(double dt) {
+    left -= dt;
+    for (var p = 0; p < 2; p++) {
+      change[p] -= dt;
+      if (change[p] <= 0) {
+        active[p] = _pick(p);
+        change[p] = .6 + rng.nextDouble() * .4;
+      }
+    }
+    if (isBot(1) && rng.nextDouble() < dt * 1.4) {
+      score[1]++;
+      active[1] = _pick(1);
+    }
+    hud.value = '${score[1]}  :  ${score[0]}';
+    if (left <= 0) end(score[0] == score[1] ? null : score[0] > score[1] ? 0 : 1);
+  }
 }
 
 class TicTacToeGame extends ArcadeGame {
-  TicTacToeGame({required super.humans}); final board=List<int>.filled(9,0);int turn=1;bool botMoved=false;
+  TicTacToeGame({required super.humans}); final board=List<int>.filled(9,0);int turn=1;bool botMoved=false;double botWait=0;
   @override void paintGame(Canvas c){text(c,'TIC TAC TOE',Offset(0,-hh+3));final s=min(hw*.78,hh*.65);for(int i=1;i<3;i++){rule(c,Offset(-s/2+i*s/3,-s/2),Offset(-s/2+i*s/3,s/2));rule(c,Offset(-s/2,-s/2+i*s/3),Offset(s/2,-s/2+i*s/3));}for(int i=0;i<9;i++){if(board[i]!=0)text(c,board[i]==1?'X':'O',Offset(-s/2+(i%3+.5)*s/3,-s/2+(i~/3+.5)*s/3),size:s/5,color:playerColors[board[i]-1]);}text(c,humans==1?'YOU: X  ·  BOT: O':turn==1?'BLUE: X TURN':'ORANGE: O TURN',Offset(0,hh-4),size:2);}
   @override int zoneOf(Vector2 w)=>0;
   @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||(humans==1&&turn!=1))return;_play(w);}
   void _play(Vector2 w){final s=min(hw*.78,hh*.65),col=((w.x+s/2)/(s/3)).floor(),row=((w.y+s/2)/(s/3)).floor();if(col<0||col>2||row<0||row>2)return;final i=row*3+col;if(board[i]!=0)return;board[i]=turn;if(_won(turn)){end(turn-1);return;}if(board.every((v)=>v!=0)){end(null);return;}turn=turn==1?2:1;botMoved=false;}
   bool _won(int p){const ls=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];return ls.any((l)=>l.every((i)=>board[i]==p));}
-  @override void tick(double dt){if(humans!=1||turn!=2||botMoved)return;botMoved=true;final empty=[for(int i=0;i<9;i++)if(board[i]==0)i];if(empty.isEmpty)return;int pick=empty.first;bool found=false;for(final i in empty){board[i]=2;if(_won(2)){pick=i;found=true;}board[i]=0;if(found)break;}if(!found)for(final i in empty){board[i]=1;if(_won(1)){pick=i;found=true;}board[i]=0;if(found)break;}if(!found)pick=empty.contains(4)?4:empty[rng.nextInt(empty.length)];board[pick]=2;if(_won(2)){end(1);return;}if(board.every((v)=>v!=0)){end(null);return;}turn=1;}
+  @override void tick(double dt){if(humans!=1||turn!=2)return;if(!botMoved){botMoved=true;botWait=.5;}botWait-=dt;if(botWait>0)return;final empty=[for(int i=0;i<9;i++)if(board[i]==0)i];if(empty.isEmpty)return;int pick=empty.first;bool found=false;for(final i in empty){board[i]=2;if(_won(2)){pick=i;found=true;}board[i]=0;if(found)break;}if(!found)for(final i in empty){board[i]=1;if(_won(1)){pick=i;found=true;}board[i]=0;if(found)break;}if(!found)pick=empty.contains(4)?4:empty[rng.nextInt(empty.length)];board[pick]=2;if(_won(2)){end(1);return;}if(board.every((v)=>v!=0)){end(null);return;}turn=1;}
 }
 
 class RpsGame extends ArcadeGame {
-  RpsGame({required super.humans});final picks=<int?>[null,null];int round=1;final wins=[0,0];
-  @override void paintGame(Canvas c){text(c,'ROCK PAPER SCISSORS',Offset(0,-hh+3),size:2.2);text(c,picks[1]==null?'TOP: TAP TO PICK':['ROCK','PAPER','SCISSORS'][picks[1]!],Offset(0,-hh*.4),color:playerColors[1]);text(c,picks[0]==null?'BOTTOM: TAP TO PICK':['ROCK','PAPER','SCISSORS'][picks[0]!],Offset(0,hh*.4),color:playerColors[0]);text(c,'${wins[1]}  -  ${wins[0]}',Offset.zero,size:4);text(c,'ROUND $round / 3',Offset(0,hh-4));}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||picks[p]!=null)return;picks[p]=rng.nextInt(3);if(isBot(1))picks[1]=rng.nextInt(3);if(picks.every((v)=>v!=null)){final a=picks[0]!,b=picks[1]!;if(a!=b){if((a-b+3)%3==1)wins[0]++;else wins[1]++;}if(round==3){end(wins[0]==wins[1]?null:wins[0]>wins[1]?0:1);}else{round++;picks[0]=null;picks[1]=null;}}}
-  @override void tick(double dt){}
+  RpsGame({required super.humans});
+  static const labels = ['ROCK', 'PAPER', 'SCISSORS'];
+  final picks = <int?>[null, null];
+  final wins = [0, 0];
+  int round = 1;
+  double reveal = 0, botClock = .6;
+  String result = '';
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'ROCK PAPER SCISSORS', Offset(0, -hh + 3), size: 2.2);
+    for (var p = 0; p < 2; p++) {
+      final dir = p == 0 ? 1.0 : -1.0;
+      final pick = picks[p];
+      if (reveal > 0 && pick != null) {
+        text(c, labels[pick], Offset(0, dir * hh * .22), size: 4, color: playerColors[p]);
+      } else if (pick != null) {
+        text(c, 'LOCKED IN', Offset(0, dir * hh * .6), size: 3, color: playerColors[p]);
+      } else {
+        for (var i = 0; i < 3; i++) {
+          final pos = Offset((i - 1) * hw * .62, dir * hh * .6);
+          c.drawRRect(
+              RRect.fromRectAndRadius(Rect.fromCenter(center: pos, width: hw * .56, height: hh * .12),
+                  const Radius.circular(1.5)),
+              Paint()..color = playerColors[p].withOpacity(.85));
+          text(c, labels[i], pos, size: 1.6, color: const Color(0xFF101820));
+        }
+      }
+    }
+    text(c, reveal > 0 ? result : '${wins[1]}  -  ${wins[0]}', Offset.zero, size: reveal > 0 ? 3 : 4);
+    text(c, 'ROUND $round', Offset(0, hh - 4));
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase != 0 || reveal > 0 || picks[p] != null) return;
+    picks[p] = w.x < -hw * .31 ? 0 : (w.x < hw * .31 ? 1 : 2);
+  }
+
+  @override
+  void tick(double dt) {
+    if (reveal > 0) {
+      reveal -= dt;
+      if (reveal <= 0) {
+        if (round >= 3 && wins[0] != wins[1]) {
+          end(wins[0] > wins[1] ? 0 : 1);
+          return;
+        }
+        round++;
+        picks[0] = null;
+        picks[1] = null;
+        botClock = .6;
+      }
+      return;
+    }
+    if (isBot(1) && picks[1] == null) {
+      botClock -= dt;
+      if (botClock <= 0) picks[1] = rng.nextInt(3);
+    }
+    final a = picks[0], b = picks[1];
+    if (a != null && b != null) {
+      if (a == b) {
+        result = 'DRAW';
+      } else if ((a - b + 3) % 3 == 1) {
+        wins[0]++;
+        result = 'BLUE SCORES';
+      } else {
+        wins[1]++;
+        result = 'ORANGE SCORES';
+      }
+      reveal = 1.6;
+    }
+    hud.value = '${wins[1]}  :  ${wins[0]}';
+  }
 }
 
 /// Tap to accelerate; reach the finish first. Works with one or two players.
@@ -103,10 +222,10 @@ class TankDuelGame extends ArcadeGame {
   final hp = [3, 3];
   final cooldown = [0.0, 0.0];
   final shells = <_TankShell>[];
-  double botClock = .8;
+  double botClock = .8, botTarget = .42;
+  final tx = [-.42, .42];
 
-  Offset _tank(int p) => Offset(p == 0 ? -hw * .42 : hw * .42,
-      p == 0 ? hh * .38 : -hh * .38);
+  Offset _tank(int p) => Offset(tx[p] * hw, p == 0 ? hh * .38 : -hh * .38);
 
   @override
   void paintGame(Canvas c) {
@@ -139,7 +258,7 @@ class TankDuelGame extends ArcadeGame {
       c.drawCircle(Offset(shell.x, shell.y), .8,
           Paint()..color = const Color(0xFFFFD54F));
     }
-    text(c, 'TAP YOUR HALF TO FIRE', Offset(0, 0), size: 2.4);
+    text(c, 'TAP TO FIRE · DRAG TO DODGE', Offset(0, 0), size: 2.2);
   }
 
   void _fire(int p) {
@@ -160,12 +279,17 @@ class TankDuelGame extends ArcadeGame {
   @override
   void onTouch(int p, Vector2 w, int phase) {
     if (phase == 0) _fire(p);
+    tx[p] = (w.x / hw).clamp(-.8, .8).toDouble();
   }
 
   @override
   void tick(double dt) {
     for (var p = 0; p < 2; p++) {
       cooldown[p] = max(0, cooldown[p] - dt);
+    }
+    if (isBot(1)) {
+      if (rng.nextDouble() < dt * 1.2) botTarget = rng.nextDouble() * 1.4 - .7;
+      tx[1] += (botTarget - tx[1]).clamp(-.5 * dt, .5 * dt).toDouble();
     }
     if (isBot(1) && hp[1] > 0) {
       botClock -= dt;
@@ -203,10 +327,72 @@ class _TankShell {
 /// Aim by tapping left/right of the centre; score points for shots near the bullseye.
 class ArcheryGame extends ArcadeGame {
   ArcheryGame({required super.humans});
-  final score=[0,0]; final shots=[0,0]; final last=[0,0];
-  @override void paintGame(Canvas c){text(c,'ARCHERY DUEL',Offset(0,-hh+3));final center=Offset.zero;for(var i=4;i>=1;i--)c.drawCircle(center,min(hw*.34,hh*.3)*i/4,Paint()..color=[const Color(0xFFE64A4A),const Color(0xFFF7F7F7),const Color(0xFF42A5F5),const Color(0xFFFFD54F)][(4-i)%4]);c.drawCircle(center,min(hw*.34,hh*.3)*.12,Paint()..color=const Color(0xFF263238));text(c,'${score[1]}  -  ${score[0]}',Offset(0,hh*.58),size:3);text(c,'${shots[1]}/5 SHOTS',Offset(0,-hh*.55),size:2,color:playerColors[1]);text(c,'${shots[0]}/5 SHOTS',Offset(0,hh*.72),size:2,color:playerColors[0]);text(c,'TAP TO AIM & SHOOT',Offset(0,0),size:2);}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||shots[p]>=5)return;shots[p]++;final error=(w.x/hw).abs()*.65+(w.y.abs()/hh)*.35;final points=error<.2?10:error<.42?7:error<.68?4:1;last[p]=points;score[p]+=points;if(shots.every((s)=>s>=5))end(score[0]==score[1]?null:score[0]>score[1]?0:1);}
-  @override void tick(double dt){if(isBot(1)&&shots[1]<5&&rng.nextDouble()<dt*.7){shots[1]++;score[1]+=[1,4,7,10][rng.nextInt(4)];if(shots.every((s)=>s>=5))end(score[0]==score[1]?null:score[0]>score[1]?0:1);}}
+  final score = [0, 0], shots = [0, 0], last = [0, 0];
+  final marks = <Offset>[], markOwner = <int>[];
+  double t = 0, botClock = 1;
+  double get tr => min(hw * .34, hh * .3);
+  Offset cross(int p) {
+    final a = t * (p == 0 ? 2.1 : 2.6) + p * 1.7;
+    return Offset(sin(a) * tr * 1.15, sin(a * 1.37 + 1) * tr * 1.15);
+  }
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'ARCHERY DUEL', Offset(0, -hh + 3));
+    const ring = [Color(0xFFE64A4A), Color(0xFFF7F7F7), Color(0xFF42A5F5), Color(0xFFFFD54F)];
+    for (var i = 4; i >= 1; i--) {
+      c.drawCircle(Offset.zero, tr * i / 4, Paint()..color = ring[(4 - i) % 4]);
+    }
+    c.drawCircle(Offset.zero, tr * .12, Paint()..color = const Color(0xFF263238));
+    for (var i = 0; i < marks.length; i++) {
+      c.drawCircle(marks[i], .5, Paint()..color = playerColors[markOwner[i]]);
+    }
+    for (var p = 0; p < 2; p++) {
+      if (shots[p] >= 5) continue;
+      final o = cross(p);
+      final pen = Paint()
+        ..color = playerColors[p]
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = .35;
+      c.drawCircle(o, 1.3, pen);
+      c.drawLine(o.translate(-2, 0), o.translate(2, 0), pen);
+      c.drawLine(o.translate(0, -2), o.translate(0, 2), pen);
+    }
+    text(c, '${score[1]}  -  ${score[0]}', Offset(0, hh * .58), size: 3);
+    text(c, '${shots[1]}/5 SHOTS', Offset(0, -hh * .55), size: 2, color: playerColors[1]);
+    text(c, '${shots[0]}/5 SHOTS', Offset(0, hh * .72), size: 2, color: playerColors[0]);
+    text(c, 'TAP WHEN YOUR CROSSHAIR IS ON TARGET', Offset(0, hh - 4), size: 1.7);
+  }
+
+  void _shoot(int p) {
+    if (shots[p] >= 5) return;
+    shots[p]++;
+    final o = cross(p), d = o.distance / tr;
+    final pts = d < .12 ? 10 : d < .4 ? 7 : d < .7 ? 4 : d < 1 ? 2 : 0;
+    last[p] = pts;
+    score[p] += pts;
+    marks.add(o);
+    markOwner.add(p);
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase == 0) _shoot(p);
+  }
+
+  @override
+  void tick(double dt) {
+    t += dt;
+    if (isBot(1) && shots[1] < 5) {
+      botClock -= dt;
+      if (botClock <= 0 && (cross(1).distance < tr * .5 || botClock < -1.2)) {
+        _shoot(1);
+        botClock = .8 + rng.nextDouble();
+      }
+    }
+    hud.value = '${score[1]}  :  ${score[0]}';
+    if (shots[0] >= 5 && shots[1] >= 5) end(score[0] == score[1] ? null : score[0] > score[1] ? 0 : 1);
+  }
 }
 
 /// Turn-based memory match. Tap two tiles per turn; matched pairs score a point.
@@ -217,30 +403,42 @@ class MemoryGridGame extends ArcadeGame {
   @override Future<void> setup() async {final vals=[0,0,1,1,2,2,3,3,4,4,5,5]..shuffle(rng);tiles.addAll(vals);await super.setup();}
   @override void paintGame(Canvas c){text(c,'MEMORY MATCH',Offset(0,-hh+3));final cw=hw*.24,ch=hh*.19;for(var i=0;i<12;i++){final x=(i%4-1.5)*hw*.43,y=(i~/4-1)*hh*.31;final open=revealed.contains(i)||matched.contains(i);c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(x,y),width:cw,height:ch),const Radius.circular(1)),Paint()..color=open?const Color(0xFFECEFF1):const Color(0xFF31566D));if(open)text(c,'${tiles[i]+1}',Offset(x,y),size:3,color:const Color(0xFF17232C));}text(c,'BLUE ${points[0]}  ·  ORANGE ${points[1]}',Offset(0,hh*.78),size:2.2);text(c,turn==0?'BLUE TURN':'ORANGE TURN',Offset(0,-hh*.7),size:2,color:playerColors[turn]);}
   @override int zoneOf(Vector2 w)=>0;
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||lock>0|| (humans==1&&turn==1))return;final col=((w.x/(hw*.86)+1)*2).floor().clamp(0,3).toInt();final row=((w.y/(hh*.62)+1)*1.5).floor().clamp(0,2).toInt();final i=row*4+col;if(matched.contains(i)||revealed.contains(i))return;revealed.add(i);if(first==null){first=i;}else{final a=first!;if(tiles[a]==tiles[i]){matched.add(a);matched.add(i);points[turn]++;if(matched.length==12){end(points[0]==points[1]?null:points[0]>points[1]?0:1);return;}}else{lock=.75;}first=null;turn=1-turn;}}
-  @override void tick(double dt){if(lock>0){lock-=dt;if(lock<=0)revealed.removeWhere((i)=>!matched.contains(i));}if(isBot(1)&&turn==1&&lock<=0){botClock-=dt;if(botClock<=0){final available=[for(var i=0;i<12;i++)if(!matched.contains(i)&&!revealed.contains(i))i];if(available.isNotEmpty){final a=available[rng.nextInt(available.length)];revealed.add(a);first=a;final rest=[for(var i=0;i<12;i++)if(i!=a&&!matched.contains(i)&&!revealed.contains(i))i];if(rest.isNotEmpty){final b=rest.firstWhere((i)=>tiles[i]==tiles[a],orElse:()=>rest[rng.nextInt(rest.length)]);revealed.add(b);if(tiles[a]==tiles[b]){matched.add(a);matched.add(b);points[1]++;}else lock=.75;first=null;turn=0;}}botClock=1.0;}}}
+  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||lock>0|| (humans==1&&turn==1))return;final col=((w.x/(hw*.86)+1)*2).floor().clamp(0,3).toInt();final row=((w.y/(hh*.62)+1)*1.5).floor().clamp(0,2).toInt();final i=row*4+col;if(matched.contains(i)||revealed.contains(i))return;revealed.add(i);if(first==null){first=i;}else{final a=first!;if(tiles[a]==tiles[i]){matched.add(a);matched.add(i);points[turn]++;if(matched.length==12){end(points[0]==points[1]?null:points[0]>points[1]?0:1);return;}}else{lock=.75;turn=1-turn;}first=null;}}
+  @override void tick(double dt){if(lock>0){lock-=dt;if(lock<=0)revealed.removeWhere((i)=>!matched.contains(i));}if(isBot(1)&&turn==1&&lock<=0){botClock-=dt;if(botClock<=0){final available=[for(var i=0;i<12;i++)if(!matched.contains(i)&&!revealed.contains(i))i];if(available.isNotEmpty){final a=available[rng.nextInt(available.length)];revealed.add(a);first=a;final rest=[for(var i=0;i<12;i++)if(i!=a&&!matched.contains(i)&&!revealed.contains(i))i];if(rest.isNotEmpty){final b=rest.firstWhere((i)=>tiles[i]==tiles[a],orElse:()=>rest[rng.nextInt(rest.length)]);revealed.add(b);if(tiles[a]==tiles[b]){matched.add(a);matched.add(b);points[1]++;if(matched.length==12){end(points[0]==points[1]?null:points[0]>points[1]?0:1);return;}}else{lock=.75;turn=0;}first=null;}}botClock=1.0;}}}
 }
 
 class ConnectFourGame extends ArcadeGame {
   ConnectFourGame({required super.humans});
-  final board=List<int>.filled(42,0); int turn=1;
+  final board=List<int>.filled(42,0); int turn=1; double botWait=.6;
   @override void paintGame(Canvas c){text(c,'CONNECT FOUR',Offset(0,-hh+3));final cw=hw*.23,ch=hh*.15;for(var r=0;r<6;r++)for(var col=0;col<7;col++){final x=(col-3)*cw,y=(r-2.5)*ch;final v=board[r*7+col];c.drawCircle(Offset(x,y),min(cw,ch)*.38,Paint()..color=v==0?const Color(0xFF314452):playerColors[v-1]);}text(c,humans==1?'YOU: BLUE  ·  BOT: ORANGE':turn==1?'BLUE TURN':'ORANGE TURN',Offset(0,hh-4),size:2);}
   @override int zoneOf(Vector2 w)=>0;
   @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||(humans==1&&turn==2))return;_drop(((w.x/hw+1)*3.5).floor().clamp(0,6).toInt());}
   void _drop(int col){for(var r=5;r>=0;r--){final i=r*7+col;if(board[i]==0){board[i]=turn;if(_win(turn)){end(turn-1);return;}if(board.every((v)=>v!=0)){end(null);return;}turn=3-turn;return;}}}
   bool _win(int p){for(var r=0;r<6;r++)for(var c=0;c<7;c++){for(final d in [[0,1],[1,0],[1,1],[1,-1]]){var ok=true;for(var k=0;k<4;k++){final rr=r+d[0]*k,cc=c+d[1]*k;if(rr<0||rr>=6||cc<0||cc>=7||board[rr*7+cc]!=p){ok=false;break;}}if(ok)return true;}}return false;}
-  @override void tick(double dt){if(humans!=1||turn!=2)return;final legal=[for(var c=0;c<7;c++)if(board[c]==0)c];if(legal.isEmpty)return;int pick=legal[rng.nextInt(legal.length)];for(final c in legal){final r=List<int>.generate(6,(i)=>board[i*7+c]).lastIndexWhere((v)=>v==0);if(r>=0){board[r*7+c]=2;if(_win(2)){end(1);return;}board[r*7+c]=0;}}_drop(pick);}
+  int _row(int c){for(var r=5;r>=0;r--){if(board[r*7+c]==0)return r;}return -1;}
+  @override void tick(double dt){
+    if(humans!=1||turn!=2)return;
+    botWait-=dt; if(botWait>0)return; botWait=.6;
+    final legal=[for(var c=0;c<7;c++)if(board[c]==0)c]; if(legal.isEmpty)return;
+    int? pick;
+    for(final who in [2,1]){
+      for(final c in legal){final r=_row(c);board[r*7+c]=who;final w=_win(who);board[r*7+c]=0;if(w){pick=c;break;}}
+      if(pick!=null)break;
+    }
+    pick??=(legal.contains(3)&&rng.nextBool())?3:legal[rng.nextInt(legal.length)];
+    _drop(pick);
+  }
 }
 
 class DotsBoxesGame extends ArcadeGame {
   DotsBoxesGame({required super.humans});
   // 3 x 3 dots make four boxes; edges are selected by tapping near them.
-  final edges=<String>{}; final boxes=<int,int>{}; int turn=0; int moves=0;
+  final edges=<String>{}; final boxes=<int,int>{}; int turn=0; int moves=0; double botWait=.6;
   @override void paintGame(Canvas c){text(c,'DOTS & BOXES',Offset(0,-hh+3));final s=min(hw*.8,hh*.62);Offset pt(int x,int y)=>Offset(-s/2+x*s/2,-s/2+y*s/2);for(var y=0;y<2;y++)for(var x=0;x<2;x++){final owner=boxes[y*2+x];if(owner!=null)c.drawRect(Rect.fromLTRB(pt(x,y).dx,pt(x,y).dy,pt(x+1,y+1).dx,pt(x+1,y+1).dy),Paint()..color=playerColors[owner].withOpacity(.3));}for(var y=0;y<3;y++)for(var x=0;x<3;x++)c.drawCircle(pt(x,y),.65,Paint()..color=const Color(0xFFFFFFFF));for(var y=0;y<3;y++)for(var x=0;x<2;x++)if(edges.contains('h$x,$y'))rule(c,pt(x,y),pt(x+1,y));for(var y=0;y<2;y++)for(var x=0;x<3;x++)if(edges.contains('v$x,$y'))rule(c,pt(x,y),pt(x,y+1));text(c,'BLUE ${boxes.values.where((v)=>v==0).length}  ·  ORANGE ${boxes.values.where((v)=>v==1).length}',Offset(0,hh*.72),size:2);text(c,turn==0?'BLUE DRAW A LINE':'ORANGE DRAW A LINE',Offset(0,hh-4),size:2,color:playerColors[turn]);}
   @override int zoneOf(Vector2 w)=>0;
   @override void onTouch(int p,Vector2 w,int phase){if(phase!=0||(humans==1&&turn==1))return;final s=min(hw*.8,hh*.62);final gx=((w.x+s/2)/(s/2)).clamp(0,2),gy=((w.y+s/2)/(s/2)).clamp(0,2);final x=gx.floor().clamp(0,2).toInt(),y=gy.floor().clamp(0,2).toInt();final fx=gx-x,fy=gy-y;String key;if(fx>fy&&fx+fy<1)key='h${x.clamp(0,1)},${y.clamp(0,2)}';else if(fx<fy&&fx+fy>1)key='h${x.clamp(0,1)},${(y+1).clamp(0,2)}';else if(fx>fy)key='v${(x+1).clamp(0,2)},${y.clamp(0,1)}';else key='v${x.clamp(0,2)},${y.clamp(0,1)}';if(edges.contains(key))return;edges.add(key);moves++;final got=_claim();if(!got)turn=1-turn;if(boxes.length==4){final a=boxes.values.where((v)=>v==0).length,b=boxes.values.where((v)=>v==1).length;end(a==b?null:a>b?0:1);}}
   bool _claim(){bool got=false;for(var y=0;y<2;y++)for(var x=0;x<2;x++){final id=y*2+x;if(boxes.containsKey(id))continue;if(edges.contains('h$x,$y')&&edges.contains('h$x,${y+1}')&&edges.contains('v$x,$y')&&edges.contains('v${x+1},$y')){boxes[id]=turn;got=true;}}return got;}
-  @override void tick(double dt){if(humans!=1||turn!=1||edges.length>=12)return;final candidates=<String>[];for(var y=0;y<3;y++)for(var x=0;x<2;x++)if(!edges.contains('h$x,$y'))candidates.add('h$x,$y');for(var y=0;y<2;y++)for(var x=0;x<3;x++)if(!edges.contains('v$x,$y'))candidates.add('v$x,$y');if(candidates.isEmpty)return;edges.add(candidates[rng.nextInt(candidates.length)]);final got=_claim();if(!got)turn=0;if(boxes.length==4){final a=boxes.values.where((v)=>v==0).length,b=boxes.values.where((v)=>v==1).length;end(a==b?null:a>b?0:1);}}
+  @override void tick(double dt){if(humans!=1||turn!=1||edges.length>=12)return;botWait-=dt;if(botWait>0)return;botWait=.6;final candidates=<String>[];for(var y=0;y<3;y++)for(var x=0;x<2;x++)if(!edges.contains('h$x,$y'))candidates.add('h$x,$y');for(var y=0;y<2;y++)for(var x=0;x<3;x++)if(!edges.contains('v$x,$y'))candidates.add('v$x,$y');if(candidates.isEmpty)return;edges.add(candidates[rng.nextInt(candidates.length)]);final got=_claim();if(!got)turn=0;if(boxes.length==4){final a=boxes.values.where((v)=>v==0).length,b=boxes.values.where((v)=>v==1).length;end(a==b?null:a>b?0:1);}}
 }
 
 /// Mini golf uses velocity and friction: drag backward and release to putt.
@@ -251,6 +449,7 @@ class MiniGolfGame extends ArcadeGame {
   final ballX = [0.0, 0.0];
   final velocity = [0.0, 0.0];
   final done = [false, false];
+  final holed = [false, false];
   final dragStart = <Vector2?>[null, null];
   final dragCurrent = <Vector2?>[null, null];
   double botClock = .8;
@@ -323,6 +522,7 @@ class MiniGolfGame extends ArcadeGame {
           ballX[p] = holeX;
           velocity[p] = 0;
           done[p] = true;
+          holed[p] = true;
         }
         if (ballX[p] < -hw * .72 || ballX[p] > hw * .72) {
           ballX[p] = ballX[p].clamp(-hw * .72, hw * .72).toDouble();
@@ -335,18 +535,17 @@ class MiniGolfGame extends ArcadeGame {
     if (isBot(1) && !done[1] && velocity[1].abs() < .1) {
       botClock -= dt;
       if (botClock <= 0) {
-        velocity[1] = (holeX - ballX[1]).sign * (7 + rng.nextDouble() * 3);
+        final dist = (holeX - ballX[1]).abs();
+        velocity[1] = (holeX - ballX[1]).sign * min(18.0, sqrt(2 * 7.5 * dist) * (.85 + rng.nextDouble() * .3));
         strokes[1]++;
         botClock = 1.3;
         if (strokes[1] >= 5) done[1] = true;
       }
     }
-    if (done.every((value) => value)) {
-      end(strokes[0] == strokes[1]
-          ? null
-          : strokes[0] < strokes[1]
-              ? 0
-              : 1);
+    final settled = velocity[0].abs() < .05 && velocity[1].abs() < .05;
+    if (done.every((value) => value) && settled) {
+      final s0 = strokes[0] + (holed[0] ? 0 : 3), s1 = strokes[1] + (holed[1] ? 0 : 3);
+      end(s0 == s1 ? null : s0 < s1 ? 0 : 1);
     }
   }
 }
@@ -361,10 +560,49 @@ class BoatRaceGame extends ArcadeGame {
 
 /// Jump the moving barrier; survive to the end of the round.
 class ObstacleRunGame extends ArcadeGame {
-  ObstacleRunGame({required super.humans});final alive=[true,true],score=[0,0],jump=[0.0,0.0];double obstacle=1,left=25,bot=.3;
-  @override void paintGame(Canvas c){text(c,'OBSTACLE RUN',Offset(0,-hh+3));for(var p=0;p<2;p++){final y=p==0?hh*.32:-hh*.32,x=hw*.65-obstacle*hw*1.3;c.drawRect(Rect.fromLTRB(-hw*.8,y-hh*.035,hw*.8,y+hh*.035),Paint()..color=const Color(0xFF3D5362));c.drawRect(Rect.fromLTRB(x-hw*.04,y-hh*.09,x+hw*.04,y+hh*.09),Paint()..color=const Color(0xFFFF7043));c.drawCircle(Offset(-hw*.45,y-(jump[p]>0?hh*.12:0)),min(hw*.06,hh*.06),Paint()..color=playerColors[p]);text(c,alive[p]?'${score[p]}':'OUT',Offset(-hw*.65,y+hh*.12),size:2,color:playerColors[p]);}text(c,'TAP YOUR HALF TO JUMP',Offset(0,0),size:2);text(c,'${left.ceil()}s',Offset(0,hh-4));}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase==0&&alive[p]&&jump[p]<=0)jump[p]=.38;}
-  @override void tick(double dt){left-=dt;obstacle-=dt*.45;for(var p=0;p<2;p++){if(jump[p]>0)jump[p]-=dt;if(obstacle<.18&&obstacle>-.02&&jump[p]<=0)alive[p]=false;if(obstacle<=0)score[p]++;}if(obstacle<=0)obstacle=1;if(isBot(1)&&alive[1]){bot-=dt;if(bot<=0){jump[1]=.38;bot=.5+rng.nextDouble()*.3;}}if(left<=0||alive.every((v)=>!v))end(score[0]==score[1]?null:score[0]>score[1]?0:1);}
+  ObstacleRunGame({required super.humans});
+  final alive = [true, true], score = [0, 0], jump = [0.0, 0.0];
+  double obstacle = 1, left = 25;
+  bool botOk = true;
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'OBSTACLE RUN', Offset(0, -hh + 3));
+    for (var p = 0; p < 2; p++) {
+      final y = p == 0 ? hh * .32 : -hh * .32, x = -hw * .65 + obstacle * hw * 1.3;
+      c.drawRect(Rect.fromLTRB(-hw * .8, y - hh * .035, hw * .8, y + hh * .035), Paint()..color = const Color(0xFF3D5362));
+      c.drawRect(Rect.fromLTRB(x - hw * .04, y - hh * .09, x + hw * .04, y + hh * .09), Paint()..color = const Color(0xFFFF7043));
+      c.drawCircle(Offset(-hw * .45, y - (jump[p] > 0 ? hh * .16 : 0)), min(hw * .06, hh * .06),
+          Paint()..color = alive[p] ? playerColors[p] : const Color(0xFF55616B));
+      text(c, alive[p] ? '${score[p]}' : 'OUT ${score[p]}', Offset(-hw * .65, y + hh * .12), size: 2, color: playerColors[p]);
+    }
+    text(c, 'TAP YOUR HALF TO JUMP', Offset.zero, size: 2);
+    text(c, '${left.ceil()}s', Offset(0, hh - 4));
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase == 0 && alive[p] && jump[p] <= 0) jump[p] = .6;
+  }
+
+  @override
+  void tick(double dt) {
+    left -= dt;
+    obstacle -= dt * (.45 + (25 - left) * .012);
+    for (var p = 0; p < 2; p++) {
+      if (jump[p] > 0) jump[p] -= dt;
+      if (alive[p] && obstacle > .09 && obstacle < .21 && jump[p] <= 0) alive[p] = false;
+    }
+    if (obstacle <= 0) {
+      for (var p = 0; p < 2; p++) {
+        if (alive[p]) score[p]++;
+      }
+      obstacle = 1;
+      botOk = rng.nextDouble() < .85;
+    }
+    if (isBot(1) && alive[1] && jump[1] <= 0 && botOk && obstacle < .34 && obstacle > .27) jump[1] = .6;
+    if (left <= 0 || alive.every((v) => !v)) end(score[0] == score[1] ? null : score[0] > score[1] ? 0 : 1);
+  }
 }
 
 /// Throw visible snowball projectiles; hits require the shot to cross the rival's target.
@@ -374,34 +612,28 @@ class SnowballGame extends ArcadeGame {
   final hp = [5, 5];
   final cool = [0.0, 0.0];
   final shots = <_SnowballShot>[];
-  double botClock = .8;
+  double botClock = .8, t = 0;
+  double get r => min(hw * .17, hh * .14);
+  double txAt(int p, double time) => sin(time * (p == 0 ? 1.3 : 1.7) + p * 2) * hw * .55;
 
   @override
   void paintGame(Canvas c) {
     text(c, 'SNOWBALL FIGHT', Offset(0, -hh + 3));
     for (var p = 0; p < 2; p++) {
       final y = p == 0 ? hh * .38 : -hh * .38;
-      c.drawCircle(Offset(0, y), min(hw * .17, hh * .14),
-          Paint()..color = playerColors[p]);
-      text(c, '${hp[p]} HP', Offset(0, y + hh * .2), size: 3,
-          color: playerColors[p]);
+      c.drawCircle(Offset(txAt(p, t), y), r, Paint()..color = playerColors[p]);
+      text(c, '${hp[p]} HP', Offset(0, y + (p == 0 ? hh * .2 : -hh * .2)), size: 3, color: playerColors[p]);
     }
     for (final shot in shots) {
-      c.drawCircle(Offset(shot.x, shot.y), .8,
-          Paint()..color = const Color(0xFFF4FAFF));
+      c.drawCircle(Offset(shot.x, shot.y), .8, Paint()..color = const Color(0xFFF4FAFF));
     }
-    text(c, 'AIM WITH YOUR TAP POSITION', Offset(0, 0), size: 2.4);
+    text(c, 'TAP WHERE THE RIVAL WILL BE', Offset.zero, size: 2.2);
   }
 
   void _throw(int p, double x) {
     if (cool[p] > 0 || hp[p] <= 0) return;
     cool[p] = .55;
-    shots.add(_SnowballShot(
-      p,
-      x.clamp(-hw * .8, hw * .8).toDouble(),
-      p == 0 ? hh * .22 : -hh * .22,
-      p == 0 ? -28 : 28,
-    ));
+    shots.add(_SnowballShot(p, x.clamp(-hw * .8, hw * .8).toDouble(), p == 0 ? hh * .22 : -hh * .22, p == 0 ? -28 : 28));
   }
 
   @override
@@ -411,23 +643,23 @@ class SnowballGame extends ArcadeGame {
 
   @override
   void tick(double dt) {
+    t += dt;
     for (var p = 0; p < 2; p++) {
       cool[p] = max(0, cool[p] - dt);
     }
     if (isBot(1) && hp[1] > 0) {
       botClock -= dt;
       if (botClock <= 0) {
-        _throw(1, (rng.nextDouble() - .5) * hw * .7);
+        _throw(1, txAt(0, t + hh * .51 / 28) + (rng.nextDouble() - .5) * hw * .5);
         botClock = .7 + rng.nextDouble() * .45;
       }
     }
-
     for (final shot in List<_SnowballShot>.of(shots)) {
       shot.y += shot.vy * dt;
       final targetY = shot.owner == 0 ? -hh * .29 : hh * .29;
-      final crossedTarget = shot.owner == 0 ? shot.y <= targetY : shot.y >= targetY;
-      if (crossedTarget) {
-        if (shot.x.abs() <= hw * .17) {
+      final crossed = shot.owner == 0 ? shot.y <= targetY : shot.y >= targetY;
+      if (crossed) {
+        if ((shot.x - txAt(1 - shot.owner, t)).abs() <= r * 1.05) {
           hp[1 - shot.owner] = max(0, hp[1 - shot.owner] - 1);
         }
         shots.remove(shot);
@@ -435,9 +667,8 @@ class SnowballGame extends ArcadeGame {
         shots.remove(shot);
       }
     }
-    if (hp[0] <= 0 || hp[1] <= 0) {
-      end(hp[0] == hp[1] ? null : hp[0] > hp[1] ? 0 : 1);
-    }
+    hud.value = '${hp[1]}  :  ${hp[0]}';
+    if (hp[0] <= 0 || hp[1] <= 0) end(hp[0] == hp[1] ? null : hp[0] > hp[1] ? 0 : 1);
   }
 }
 
@@ -453,54 +684,43 @@ class _SnowballShot {
 class BallBalanceGame extends ArcadeGame {
   BallBalanceGame({required super.humans});
 
-  double ball = 0;
-  double velocity = 0;
-  double left = 20;
-  double botClock = .5;
-  final taps = [0, 0];
+  double ball = 0, velocity = 0, left = 25, botClock = .4;
 
   @override
   void paintGame(Canvas c) {
     text(c, 'BALL BALANCE', Offset(0, -hh + 3));
-    final tilt = ball * hh * .12;
-    rule(c, Offset(-hw * .78, hh * .05 + tilt),
-        Offset(hw * .78, hh * .05 - tilt));
-    c.drawCircle(
-      Offset(ball * hw * .68, hh * .05 - tilt),
-      min(hw * .07, hh * .07),
-      Paint()..color = const Color(0xFFFFD54F),
-    );
-    text(c, 'BLUE ${taps[0]}  ·  ORANGE ${taps[1]}',
-        Offset(0, hh * .55), size: 2.2);
-    text(c, 'TAP LEFT OR RIGHT TO TILT', Offset(0, hh - 4), size: 1.8);
-    text(c, '${left.ceil()}s', Offset(0, -hh + 7));
+    final tilt = ball * hh * .1;
+    c.drawRect(Rect.fromLTRB(hw * .78, hh * .05 - hh * .12, hw * .86, hh * .05 + hh * .12), Paint()..color = playerColors[0]);
+    c.drawRect(Rect.fromLTRB(-hw * .86, hh * .05 - hh * .12, -hw * .78, hh * .05 + hh * .12), Paint()..color = playerColors[1]);
+    rule(c, Offset(-hw * .78, hh * .05 + tilt), Offset(hw * .78, hh * .05 - tilt));
+    c.drawCircle(Offset(ball * hw * .72, hh * .05 - tilt * ball.abs() - hh * .035), min(hw * .06, hh * .06),
+        Paint()..color = const Color(0xFFFFD54F));
+    text(c, 'BLUE: TAP TO ROLL RIGHT', Offset(0, hh * .5), size: 2, color: playerColors[0]);
+    text(c, 'ORANGE: TAP TO ROLL LEFT', Offset(0, -hh * .5), size: 2, color: playerColors[1]);
+    text(c, '${left.ceil()}s', Offset(0, hh - 4));
   }
 
   @override
   void onTouch(int p, Vector2 w, int phase) {
-    if (phase != 0) return;
-    velocity += (w.x < 0 ? -1 : 1) * (p == 0 ? .55 : -.55);
-    taps[p]++;
+    if (phase == 0) velocity += p == 0 ? .11 : -.11;
   }
 
   @override
   void tick(double dt) {
     left -= dt;
-    velocity *= pow(.985, dt * 60).toDouble();
+    velocity += ball * .5 * dt; // tilt feedback: whoever is ahead gets help
+    velocity *= pow(.97, dt * 60).toDouble();
     ball += velocity * dt;
-    if (ball.abs() > 1) {
-      // The player on the opposite side wins when the ball falls off an edge.
-      end(ball < 0 ? 1 : 0);
-      return;
-    }
     if (isBot(1)) {
       botClock -= dt;
       if (botClock <= 0) {
-        velocity -= .2;
-        botClock = .3 + rng.nextDouble() * .4;
+        velocity -= .11;
+        botClock = .15 + rng.nextDouble() * .12;
       }
     }
-    if (left <= 0) end(taps[0] == taps[1] ? null : taps[0] > taps[1] ? 0 : 1);
+    if (ball >= 1) return end(0);
+    if (ball <= -1) return end(1);
+    if (left <= 0) end(ball.abs() < .02 ? null : ball > 0 ? 0 : 1);
   }
 }
 
@@ -557,19 +777,102 @@ class _DodgeShot{_DodgeShot(this.owner,this.x,this.y,this.dir);final int owner;f
 /// Curling-style sliding stones use velocity, friction and target-distance scoring.
 class CurlingGame extends ArcadeGame {
   CurlingGame({required super.humans});
-  final stones=<_CurlStone>[]; final score=[0,0]; final launched=[0,0]; double left=35,botClock=.8;
-  @override void paintGame(Canvas c){text(c,'CURLING',Offset(0,-hh+3));c.drawCircle(Offset(0,0),min(hw*.3,hh*.25),Paint()..color=const Color(0xFF24465A));c.drawCircle(Offset(0,0),min(hw*.19,hh*.15),Paint()..color=const Color(0xFFB8D9E8));c.drawCircle(Offset(0,0),min(hw*.08,hh*.065),Paint()..color=const Color(0xFFEF5350));for(final s in stones)c.drawCircle(Offset(s.x,s.y),min(hw*.055,hh*.045),Paint()..color=playerColors[s.p]);text(c,'TAP YOUR HALF TO SLIDE',Offset(0,hh*.7),size:2);text(c,'${score[0]} - ${score[1]}',Offset(0,hh-3),size:3);}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0)return;_launch(p,(w.x/hw).clamp(-.6,.6).toDouble());}
-  void _launch(int p,double aim){if(launched[p]>=3)return;launched[p]++;final dir=p==0?-1.0:1.0;stones.add(_CurlStone(p,aim*hw,dir*hh*.72,aim*hw*.45,dir*hh*.65));}
-  @override void tick(double dt){left-=dt;botClock-=dt;if(isBot(1)&&launched[1]<3&&botClock<=0){_launch(1,(rng.nextDouble()-.5)*.6);botClock=.8;}for(final s in stones){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vx*=pow(.985,dt*60).toDouble();s.vy*=pow(.985,dt*60).toDouble();if(s.x.abs()>hw*.85){s.x=s.x.sign*hw*.85;s.vx=-s.vx*.45;}if(s.y.abs()>hh*.85){s.y=s.y.sign*hh*.85;s.vy=-s.vy*.45;}}if(left<=0||launched.every((v)=>v>=3)&&stones.every((s)=>s.vx.abs()+s.vy.abs()<.8)){final sums=[0.0,0.0];for(final s in stones){if(s.x.abs()+s.y.abs()<min(hw*.3,hh*.25))sums[s.p]+=1/(1+(Offset(s.x,s.y)).distance);}score[0]=sums[0].round();score[1]=sums[1].round();end(score[0]==score[1]?null:score[0]>score[1]?0:1);}}
+  final stones = <_CurlStone>[];
+  final score = [0, 0], launched = [0, 0];
+  double left = 40, botClock = .8;
+  double get sr => min(hw * .055, hh * .045);
+  double get house => min(hw * .3, hh * .25);
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'CURLING', Offset(0, -hh + 3));
+    c.drawCircle(Offset.zero, house, Paint()..color = const Color(0xFF24465A));
+    c.drawCircle(Offset.zero, house * .63, Paint()..color = const Color(0xFFB8D9E8));
+    c.drawCircle(Offset.zero, house * .27, Paint()..color = const Color(0xFFEF5350));
+    for (final s in stones) {
+      c.drawCircle(Offset(s.x, s.y), sr, Paint()..color = playerColors[s.p]);
+    }
+    text(c, 'LEFT/RIGHT STEERS · TAP FARTHER FROM CENTRE = MORE POWER', Offset(0, hh * .85), size: 1.5);
+    text(c, '${3 - launched[1]}  stones  ${3 - launched[0]}', Offset(0, hh - 3), size: 2);
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase != 0) return;
+    _launch(p, (w.x / hw).clamp(-.6, .6).toDouble(), (w.y.abs() / (hh * .75)).clamp(.5, 1.2).toDouble());
+  }
+
+  void _launch(int p, double aim, double power) {
+    if (launched[p] >= 3) return;
+    launched[p]++;
+    final dir = p == 0 ? -1.0 : 1.0; // direction of travel toward the house
+    stones.add(_CurlStone(p, 0, -dir * hh * .72, aim * hw * .5, dir * hh * .66 * power));
+  }
+
+  @override
+  void tick(double dt) {
+    left -= dt;
+    botClock -= dt;
+    if (isBot(1) && launched[1] < 3 && botClock <= 0) {
+      _launch(1, (rng.nextDouble() - .5) * .3, .9 + rng.nextDouble() * .2);
+      botClock = 1.6;
+    }
+    final k = pow(.985, dt * 60).toDouble();
+    for (final s in stones) {
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vx *= k;
+      s.vy *= k;
+      if (s.x.abs() > hw * .85) {
+        s.x = s.x.sign * hw * .85;
+        s.vx = -s.vx * .45;
+      }
+      if (s.y.abs() > hh * .85) {
+        s.y = s.y.sign * hh * .85;
+        s.vy = -s.vy * .45;
+      }
+    }
+    for (var i = 0; i < stones.length; i++) {
+      for (var j = i + 1; j < stones.length; j++) {
+        final a = stones[i], b = stones[j];
+        final dx = b.x - a.x, dy = b.y - a.y, d = sqrt(dx * dx + dy * dy), min2 = sr * 2;
+        if (d < min2 && d > 1e-6) {
+          final nx = dx / d, ny = dy / d, rel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+          if (rel > 0) {
+            a.vx -= rel * nx;
+            a.vy -= rel * ny;
+            b.vx += rel * nx;
+            b.vy += rel * ny;
+          }
+          final push = (min2 - d) / 2;
+          a.x -= nx * push;
+          a.y -= ny * push;
+          b.x += nx * push;
+          b.y += ny * push;
+        }
+      }
+    }
+    final stopped = stones.every((s) => s.vx.abs() + s.vy.abs() < .8);
+    if (left <= 0 || (launched.every((v) => v >= 3) && stopped)) {
+      final best = [1e9, 1e9];
+      score[0] = 0;
+      score[1] = 0;
+      for (final s in stones) {
+        final d = sqrt(s.x * s.x + s.y * s.y);
+        if (d < best[s.p]) best[s.p] = d;
+        if (d < house) score[s.p]++;
+      }
+      end(best[0] == best[1] ? null : best[0] < best[1] ? 0 : 1);
+    }
+  }
 }
 class _CurlStone{_CurlStone(this.p,this.x,this.y,this.vx,this.vy);final int p;double x,y,vx,vy;}
 
 /// Four-option trivia round with deterministic scoring and a simple CPU answerer.
 class TriviaBlitzGame extends ArcadeGame {
-  TriviaBlitzGame({required super.humans}){_next();}
+  TriviaBlitzGame({required super.humans}){q=rng.nextInt(questions.length);_next();}
   final score=[0,0]; final answered=[false,false]; int q=0; double left=30,botClock=.8; final questions=<List<Object>>[
-    ['How many sides has a hexagon?',6,[4,5,6,8]],['Which planet is known as the Red Planet?',1,['Venus','Mars','Jupiter','Mercury']],['How many minutes are in an hour?',2,[30,45,60,90]],['What is H2O commonly called?',1,['Salt','Water','Oxygen','Hydrogen']],['Which animal is a mammal?',0,['Dolphin','Trout','Frog','Ant']]
+    ['How many sides has a hexagon?',2,[4,5,6,8]],['Which planet is known as the Red Planet?',1,['Venus','Mars','Jupiter','Mercury']],['How many minutes are in an hour?',2,[30,45,60,90]],['What is H2O commonly called?',1,['Salt','Water','Oxygen','Hydrogen']],['Which animal is a mammal?',0,['Dolphin','Trout','Frog','Ant']],['What is the capital of France?',2,['Rome','Madrid','Paris','Berlin']],['How many continents are there?',3,[5,6,8,7]],['Which gas do plants absorb?',1,['Oxygen','Carbon dioxide','Helium','Neon']],['What is 9 x 7?',0,[63,56,72,49]],['Which is the largest ocean?',3,['Atlantic','Indian','Arctic','Pacific']]
   ];
   List<Object> current=[]; void _next(){current=questions[q%questions.length];q++;}
   @override void paintGame(Canvas c){text(c,'TRIVIA BLITZ',Offset(0,-hh+3));text(c,current[0] as String,Offset(0,-hh*.04),size:2.7);final opts=current[2] as List;for(int p=0;p<2;p++){final cy=p==0?hh*.38:-hh*.38;for(int i=0;i<4;i++){final at=Offset((i%2==0?-.5:.5)*hw,cy+(i<2?-1:1)*hh*.12);c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:at,width:hw*.42,height:hh*.16),const Radius.circular(2)),Paint()..color=playerColors[p].withOpacity(.85));text(c,'${opts[i]}',at,size:2.4,color:const Color(0xFF101820));}}text(c,'${score[0]} - ${score[1]}',Offset(0,0),size:3);text(c,'${left.ceil()}s',Offset(0,hh-3));}
@@ -590,27 +893,195 @@ class SimonSequenceGame extends ArcadeGame {
 /// A small maze race: each tap moves one step toward the goal; walls block movement.
 class MazeEscapeGame extends ArcadeGame {
   MazeEscapeGame({required super.humans});
-  final pos=[12,0]; final steps=[0,0]; final goal=15; final walls=<int>{2,6,10}; double botClock=.3;
-  @override void paintGame(Canvas c){text(c,'MAZE ESCAPE',Offset(0,-hh+3));final s=min(hw*.78,hh*.72)/4;final ox=-2*s,oy=-2*s;for(int i=0;i<16;i++){final r=i~/4,col=i%4,center=Offset(ox+(col+.5)*s,oy+(r+.5)*s);c.drawRect(Rect.fromCenter(center:center,width:s*.92,height:s*.92),Paint()..color=walls.contains(i)?const Color(0xFF43505B):const Color(0xFF1D3442));if(i==goal)text(c,'★',center,size:s*.45,color:const Color(0xFFFFD54F));for(int p=0;p<2;p++)if(pos[p]==i)text(c,p==0?'B':'O',center,size:s*.4,color:playerColors[p]);}text(c,'TAP LEFT EDGE, RIGHT EDGE OR CENTER TO MOVE',Offset(0,hh-3),size:1.8);}
-  @override void onTouch(int p,Vector2 w,int phase){if(phase!=0)return;final dir=w.x< -hw*.4?0:w.x>hw*.4?1:w.x<0?2:3;_move(p,dir);}
-  void _move(int p,int dir){final cur=pos[p],row=cur~/4,col=cur%4;var next=cur;if(dir==0&&col>0)next=cur-1;if(dir==1&&col<3)next=cur+1;if(dir==2&&row>0)next=cur-4;if(dir==3&&row<3)next=cur+4;if(!walls.contains(next)){pos[p]=next;steps[p]++;}if(pos[p]==goal)end(p);}
-  @override void tick(double dt){if(isBot(1)){botClock-=dt;if(botClock<=0){final cur=pos[1],row=cur~/4,col=cur%4;final candidates=[if(col<3)cur+1,if(col>0)cur-1,if(row<3)cur+4,if(row>0)cur-4].where((v)=>!walls.contains(v)).toList();if(candidates.isNotEmpty){candidates.sort((a,b)=>(goal-a).abs().compareTo((goal-b).abs()));pos[1]=candidates.first;}botClock=.45;if(pos[1]==goal)end(1);}}}
+  static const goal = 15;
+  final walls = <int>{7, 13, 14};
+  final pos = [12, 3];
+  final steps = [0, 0];
+  double botClock = .6;
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'MAZE ESCAPE', Offset(0, -hh + 3));
+    final s = min(hw * 1.5, hh * .7) / 4, ox = -2 * s, oy = -2 * s;
+    for (var i = 0; i < 16; i++) {
+      final center = Offset(ox + (i % 4 + .5) * s, oy + (i ~/ 4 + .5) * s);
+      c.drawRect(Rect.fromCenter(center: center, width: s * .92, height: s * .92),
+          Paint()..color = walls.contains(i) ? const Color(0xFF43505B) : const Color(0xFF1D3442));
+      if (i == goal) text(c, '★', center, size: s * .45, color: const Color(0xFFFFD54F));
+      for (var p = 0; p < 2; p++) {
+        if (pos[p] == i) text(c, p == 0 ? 'B' : 'O', center.translate(p == 0 ? -s * .2 : s * .2, 0), size: s * .4, color: playerColors[p]);
+      }
+    }
+    for (var p = 0; p < 2; p++) {
+      final cy = (p == 0 ? 1 : -1) * hh * .66;
+      text(c, '←', Offset(-hw * .66, cy), size: 5, color: playerColors[p]);
+      text(c, '→', Offset(hw * .66, cy), size: 5, color: playerColors[p]);
+      text(c, '↑', Offset(0, cy - hh * .1), size: 5, color: playerColors[p]);
+      text(c, '↓', Offset(0, cy + hh * .1), size: 5, color: playerColors[p]);
+    }
+    text(c, 'FIRST TO THE STAR', Offset(0, 0), size: 2);
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    if (phase != 0) return;
+    final mid = p == 0 ? hh * .66 : -hh * .66;
+    _move(p, w.x < -hw * .33 ? 0 : (w.x > hw * .33 ? 1 : (w.y < mid ? 2 : 3)));
+  }
+
+  void _move(int p, int dir) {
+    final cur = pos[p], row = cur ~/ 4, col = cur % 4;
+    var next = cur;
+    if (dir == 0 && col > 0) next = cur - 1;
+    if (dir == 1 && col < 3) next = cur + 1;
+    if (dir == 2 && row > 0) next = cur - 4;
+    if (dir == 3 && row < 3) next = cur + 4;
+    if (!walls.contains(next) && next != cur) {
+      pos[p] = next;
+      steps[p]++;
+    }
+    if (pos[p] == goal) end(p);
+  }
+
+  List<int> _nbrs(int cur) {
+    final row = cur ~/ 4, col = cur % 4;
+    return [if (col < 3) cur + 1, if (col > 0) cur - 1, if (row < 3) cur + 4, if (row > 0) cur - 4]
+        .where((v) => !walls.contains(v))
+        .toList();
+  }
+
+  int _step(int from) {
+    final prev = <int, int>{from: from};
+    final queue = <int>[from];
+    for (var i = 0; i < queue.length; i++) {
+      for (final nb in _nbrs(queue[i])) {
+        if (prev.containsKey(nb)) continue;
+        prev[nb] = queue[i];
+        queue.add(nb);
+      }
+    }
+    if (!prev.containsKey(goal) || from == goal) return from;
+    var at = goal;
+    while (prev[at] != from) {
+      at = prev[at]!;
+    }
+    return at;
+  }
+
+  @override
+  void tick(double dt) {
+    if (!isBot(1)) return;
+    botClock -= dt;
+    if (botClock <= 0) {
+      botClock = .6 + rng.nextDouble() * .3;
+      if (rng.nextDouble() < .85) {
+        pos[1] = _step(pos[1]);
+        steps[1]++;
+        if (pos[1] == goal) end(1);
+      }
+    }
+  }
 }
 
 /// Paddle-and-ball breakout: drag your paddle, break bricks with real ball movement.
 class BrickBreakerGame extends ArcadeGame {
   BrickBreakerGame({required super.humans});
-  double paddle=0,bx=0,by=0,vx=3.4,vy=4.2; int bricks=0,lives=3; final brokenBricks=<int>{};
-  @override void paintGame(Canvas c){text(c,'BRICK BREAKER',Offset(0,-hh+3));for(int i=0;i<24;i++){if(brokenBricks.contains(i))continue;final x=-hw*.82+(i%6)*hw*.32,y=-hh*.63+(i~/6)*hh*.11;c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(x,y),width:hw*.27,height:hh*.075),const Radius.circular(.6)),Paint()..color=playerColors[i%4]);}c.drawCircle(Offset(bx,by),min(hw*.035,hh*.025),Paint()..color=const Color(0xFFFFD54F));c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(paddle,hh*.72),width:hw*.3,height:hh*.055),const Radius.circular(1)),Paint()..color=playerColors[0]);text(c,'LIVES $lives',Offset(0,hh-3),size:2.5);}
-  @override void onTouch(int p,Vector2 w,int phase){paddle=w.x.clamp(-hw*.82,hw*.82).toDouble();}
-  @override void tick(double dt){bx+=vx*dt;by+=vy*dt;if(bx.abs()>hw*.92){bx=bx.sign*hw*.92;vx=-vx;}if(vy<0&&by> -hh*.72&&by< -hh*.2){final col=((bx/hw+.82)/.32).round().clamp(0,5).toInt(),row=((by/hh+.63)/.11).round().clamp(0,3).toInt();final idx=row*6+col;final brickX=-hw*.82+col*hw*.32,brickY=-hh*.63+row*hh*.11;if(!brokenBricks.contains(idx)&&(bx-brickX).abs()<hw*.15&&(by-brickY).abs()<hh*.06){brokenBricks.add(idx);bricks++;vy=vy.abs();}}if(vy>0&&by>hh*.65&&by<hh*.78&&(bx-paddle).abs()<hw*.19){vy=-vy.abs();vx+=(bx-paddle)*.5;}if(by>hh){lives--;bx=0;by=0;vy=-4.2;if(lives<=0){end(1);return;}}if(brokenBricks.length>=24)end(0);}
+  double paddle = 0, bx = 0, by = 0, vx = 12, vy = -18;
+  int lives = 3;
+  final removed = <int>{};
+  double get br => min(hw * .035, hh * .025);
+  Offset brick(int i) => Offset(-hw * .82 + (i % 6) * hw * .32, -hh * .63 + (i ~/ 6) * hh * .11);
+
+  @override
+  Future<void> setup() async {
+    by = hh * .45;
+    await super.setup();
+  }
+
+  @override
+  void paintGame(Canvas c) {
+    text(c, 'BRICK BREAKER', Offset(0, -hh + 3));
+    for (var i = 0; i < 24; i++) {
+      if (removed.contains(i)) continue;
+      c.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromCenter(center: brick(i), width: hw * .27, height: hh * .075), const Radius.circular(.6)),
+          Paint()..color = playerColors[i % 4]);
+    }
+    c.drawCircle(Offset(bx, by), br, Paint()..color = const Color(0xFFFFD54F));
+    c.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(paddle, hh * .72), width: hw * .3, height: hh * .055), const Radius.circular(1)),
+        Paint()..color = playerColors[0]);
+    text(c, 'LIVES $lives', Offset(0, hh - 3), size: 2.5);
+  }
+
+  @override
+  void onTouch(int p, Vector2 w, int phase) {
+    paddle = w.x.clamp(-hw * .82, hw * .82).toDouble();
+  }
+
+  @override
+  void tick(double dt) {
+    bx += vx * dt;
+    by += vy * dt;
+    if (bx.abs() > hw * .92) {
+      bx = bx.sign * hw * .92;
+      vx = -vx;
+    }
+    if (by < -hh * .88) {
+      by = -hh * .88;
+      vy = vy.abs();
+    }
+    for (var i = 0; i < 24; i++) {
+      if (removed.contains(i)) continue;
+      final b = brick(i);
+      if ((bx - b.dx).abs() < hw * .135 + br && (by - b.dy).abs() < hh * .0375 + br) {
+        removed.add(i);
+        final fromSide = (bx - b.dx).abs() / (hw * .135) > (by - b.dy).abs() / (hh * .0375);
+        if (fromSide) {
+          vx = -vx;
+        } else {
+          vy = -vy;
+        }
+        break;
+      }
+    }
+    if (vy > 0 && by > hh * .68 && by < hh * .76 && (bx - paddle).abs() < hw * .17 + br) {
+      vy = -min(32.0, vy.abs() * 1.02);
+      vx = ((bx - paddle) / (hw * .17) * 18).clamp(-24.0, 24.0).toDouble();
+    }
+    if (by > hh) {
+      lives--;
+      bx = 0;
+      by = hh * .45;
+      vx = rng.nextBool() ? 12 : -12;
+      vy = -18;
+      if (lives <= 0) return end(1);
+    }
+    if (removed.length >= 24) end(0);
+  }
 }
 
 /// A lane-based hop game. Tap to jump; collision and progress are state-driven.
 class PlatformHopperGame extends ArcadeGame {
   PlatformHopperGame({required super.humans});
-  final progress=[0.0,0.0], y=[0.0,0.0], vy=[0.0,0.0], hits=[0,0],nextObstacle=[0,0]; final obstacles=[.22,.43,.66,.84]; double left=25,botClock=.6;
+  final progress=[0.0,0.0], y=[0.0,0.0], vy=[0.0,0.0], hits=[0,0],nextObstacle=[0,0]; final obstacles=[.22,.43,.66,.84]; double left=25,botClock=.6; bool botOk=true;
   @override void paintGame(Canvas c){text(c,'PLATFORM HOPPER',Offset(0,-hh+3));for(int p=0;p<2;p++){final base=p==0?hh*.48:-hh*.48;for(int i=0;i<5;i++){final px=-hw*.72+i*hw*.36;final py=base-(i%2)*hh*.12;c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(px,py),width:hw*.25,height:hh*.045),const Radius.circular(1)),Paint()..color=const Color(0xFF435B69));}for(final obstacle in obstacles){final ox=-hw*.75+obstacle*hw*1.5;c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(ox,base-hh*.07),width:hw*.055,height:hh*.14),const Radius.circular(.8)),Paint()..color=const Color(0xFFE57373));}final px=-hw*.75+progress[p]*hw*1.5;c.drawCircle(Offset(px,base-y[p]),min(hw*.06,hh*.045),Paint()..color=playerColors[p]);text(c,'${(progress[p]*100).round()}%',Offset(p==0?-hw*.65:hw*.65,base+hh*.12),size:2);}text(c,'TAP TO JUMP',Offset(0,0),size:2);text(c,'${left.ceil()}s',Offset(0,hh-3));}
   @override void onTouch(int p,Vector2 w,int phase){if(phase==0&&y[p]<=0)vy[p]=hh*.8;}
-  @override void tick(double dt){left-=dt;for(int p=0;p<2;p++){final old=progress[p];y[p]+=vy[p]*dt;vy[p]-=hh*2.1*dt;if(y[p]<=0){y[p]=0;vy[p]=0;progress[p]=min(1,progress[p]+dt*.07);}if(nextObstacle[p]<obstacles.length&&old<obstacles[nextObstacle[p]]&&progress[p]>=obstacles[nextObstacle[p]]){if(y[p]<hh*.08){progress[p]=max(0,progress[p]-.08);hits[p]++;}nextObstacle[p]++;}}if(isBot(1)){botClock-=dt;if(botClock<=0){vy[1]=hh*.8;botClock=.65;}}if(progress[0]>=1||progress[1]>=1)end(progress[0]==progress[1]?null:progress[0]>progress[1]?0:1);if(left<=0)end(progress[0]==progress[1]?null:progress[0]>progress[1]?0:1);}
+  @override void tick(double dt){
+    left-=dt;
+    for(int p=0;p<2;p++){
+      final old=progress[p];
+      y[p]+=vy[p]*dt; vy[p]-=hh*2.1*dt;
+      if(y[p]<=0){y[p]=0;vy[p]=0;}
+      progress[p]=min(1.0,progress[p]+dt*.09);
+      if(nextObstacle[p]<obstacles.length&&old<obstacles[nextObstacle[p]]&&progress[p]>=obstacles[nextObstacle[p]]){
+        if(y[p]<hh*.08){progress[p]=max(0.0,progress[p]-.08);hits[p]++;}
+        nextObstacle[p]++;
+        if(p==1)botOk=rng.nextDouble()<.8;
+      }
+    }
+    if(isBot(1)&&y[1]<=0&&nextObstacle[1]<obstacles.length){final d=obstacles[nextObstacle[1]]-progress[1];if(d>0&&d<.03&&botOk)vy[1]=hh*.8;}
+    if(progress[0]>=1||progress[1]>=1){end(progress[0]==progress[1]?null:progress[0]>progress[1]?0:1);}
+    else if(left<=0){end(progress[0]==progress[1]?null:progress[0]>progress[1]?0:1);}
+  }
 }

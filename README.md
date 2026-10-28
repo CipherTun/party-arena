@@ -64,6 +64,28 @@ The included `.github/workflows/android.yml` workflow runs on pushes and pull re
 - Fruit Catch and Dodgeball use drag controls; Math Sprint and Trivia Blitz use four answer zones; Curling launches sliding stones; Simon Tiles rewards hitting the highlighted tile; Maze Escape uses edge/center taps for directions; Brick Breaker uses paddle dragging; Platform Hopper uses taps to jump over obstacles.
 - Use the back arrow to leave a game; after a round, use **Rematch** or **Back to games**.
 
+## What changed in this revision (bug-fix and controls pass)
+
+Found by reading the code (not by compiling it):
+
+- **Build blocker:** `arcade.dart` used `TextPainter` without importing Flutter's painting library.
+- **Rock Paper Scissors:** your pick was random and results flashed past. You now tap ROCK / PAPER / SCISSORS, picks stay hidden until both are in, and each round has a reveal pause (sudden death if tied after 3).
+- **Reaction Duel:** time was counted from the start of the round, not from the green light. Fixed, with a random wait and a timeout.
+- **Whack-a-Dot:** the top row was unreachable for the human in 1-player mode. Each player now has their own 6-dot board.
+- **Tank Duel / Snowball Fight:** every shot hit automatically. Drag to dodge (tanks) and moving targets you must lead (snowballs).
+- **Archery:** tapping the centre always scored 10. Now a moving crosshair; time your tap.
+- **Obstacle Run:** the obstacle was drawn moving the wrong way and dead players kept scoring. Fixed, with skill-based jump timing and rising speed.
+- **Platform Hopper:** progress froze while airborne so every obstacle was a guaranteed hit. Fixed; the CPU times its jumps.
+- **Curling:** stones started on the wrong side and drifted away from the house. Now steer with left/right, power from tap distance, stones collide, closest stone wins.
+- **Trivia Blitz:** the hexagon question had an out-of-range answer index (nobody could get it right). Fixed and 5 questions added.
+- **Maze Escape:** unfair start (3 steps vs 7). New layout with equal shortest paths, on-screen arrows, CPU uses shortest-path search.
+- **Brick Breaker:** the ball never bounced off the ceiling and moved far too slowly. Fixed ball speed, ceiling, brick collisions and spin clamp.
+- **Ball Balance:** was won by tapping fastest. Now a tug-of-ball: roll it past your edge.
+- **Memory Match:** the CPU could finish the last pair without ending the game; matching a pair now keeps your turn.
+- **Mini Golf:** unholed balls tied with holed ones and the game could end mid-roll. Now +3 stroke penalty for not holing, and it waits for balls to stop. CPU computes putt power.
+- **Tic Tac Toe / Connect Four / Dots & Boxes:** CPU waits before moving; Connect Four CPU now takes wins and blocks.
+- **CI:** `flutter analyze` no longer fails the build on info/warning lints; `flutter_lints` added and an `analysis_options.yaml` included.
+
 ## Current limitations
 
 This is still a starter project, not a store-ready release. Online multiplayer, sound, saved scores and formal automated gameplay tests are not implemented. Some arcade games are rule/state based rather than physics simulations. The source was reviewed and archive integrity checked in this environment, but Flutter/Dart are not installed here, so the analyzer, Android build and on-device controls have **not** been verified locally. Run the included GitHub Actions workflow and test the resulting APK on a real device before release.
