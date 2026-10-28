@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:ui';
+import 'package:flutter/painting.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 import '../core.dart';
 
@@ -599,10 +600,10 @@ class MazeEscapeGame extends ArcadeGame {
 /// Paddle-and-ball breakout: drag your paddle, break bricks with real ball movement.
 class BrickBreakerGame extends ArcadeGame {
   BrickBreakerGame({required super.humans});
-  double paddle=0,bx=0,by=0,vx=3.4,vy=4.2; int bricks=0,lives=3; final removed=<int>{};
-  @override void paintGame(Canvas c){text(c,'BRICK BREAKER',Offset(0,-hh+3));for(int i=0;i<24;i++){if(removed.contains(i))continue;final x=-hw*.82+(i%6)*hw*.32,y=-hh*.63+(i~/6)*hh*.11;c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(x,y),width:hw*.27,height:hh*.075),const Radius.circular(.6)),Paint()..color=playerColors[i%4]);}c.drawCircle(Offset(bx,by),min(hw*.035,hh*.025),Paint()..color=const Color(0xFFFFD54F));c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(paddle,hh*.72),width:hw*.3,height:hh*.055),const Radius.circular(1)),Paint()..color=playerColors[0]);text(c,'LIVES $lives',Offset(0,hh-3),size:2.5);}
+  double paddle=0,bx=0,by=0,vx=3.4,vy=4.2; int bricks=0,lives=3; final brokenBricks=<int>{};
+  @override void paintGame(Canvas c){text(c,'BRICK BREAKER',Offset(0,-hh+3));for(int i=0;i<24;i++){if(brokenBricks.contains(i))continue;final x=-hw*.82+(i%6)*hw*.32,y=-hh*.63+(i~/6)*hh*.11;c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(x,y),width:hw*.27,height:hh*.075),const Radius.circular(.6)),Paint()..color=playerColors[i%4]);}c.drawCircle(Offset(bx,by),min(hw*.035,hh*.025),Paint()..color=const Color(0xFFFFD54F));c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center:Offset(paddle,hh*.72),width:hw*.3,height:hh*.055),const Radius.circular(1)),Paint()..color=playerColors[0]);text(c,'LIVES $lives',Offset(0,hh-3),size:2.5);}
   @override void onTouch(int p,Vector2 w,int phase){paddle=w.x.clamp(-hw*.82,hw*.82).toDouble();}
-  @override void tick(double dt){bx+=vx*dt;by+=vy*dt;if(bx.abs()>hw*.92){bx=bx.sign*hw*.92;vx=-vx;}if(vy<0&&by> -hh*.72&&by< -hh*.2){final col=((bx/hw+.82)/.32).round().clamp(0,5).toInt(),row=((by/hh+.63)/.11).round().clamp(0,3).toInt();final idx=row*6+col;final brickX=-hw*.82+col*hw*.32,brickY=-hh*.63+row*hh*.11;if(!removed.contains(idx)&&(bx-brickX).abs()<hw*.15&&(by-brickY).abs()<hh*.06){removed.add(idx);bricks++;vy=vy.abs();}}if(vy>0&&by>hh*.65&&by<hh*.78&&(bx-paddle).abs()<hw*.19){vy=-vy.abs();vx+=(bx-paddle)*.5;}if(by>hh){lives--;bx=0;by=0;vy=-4.2;if(lives<=0){end(1);return;}}if(removed.length>=24)end(0);}
+  @override void tick(double dt){bx+=vx*dt;by+=vy*dt;if(bx.abs()>hw*.92){bx=bx.sign*hw*.92;vx=-vx;}if(vy<0&&by> -hh*.72&&by< -hh*.2){final col=((bx/hw+.82)/.32).round().clamp(0,5).toInt(),row=((by/hh+.63)/.11).round().clamp(0,3).toInt();final idx=row*6+col;final brickX=-hw*.82+col*hw*.32,brickY=-hh*.63+row*hh*.11;if(!brokenBricks.contains(idx)&&(bx-brickX).abs()<hw*.15&&(by-brickY).abs()<hh*.06){brokenBricks.add(idx);bricks++;vy=vy.abs();}}if(vy>0&&by>hh*.65&&by<hh*.78&&(bx-paddle).abs()<hw*.19){vy=-vy.abs();vx+=(bx-paddle)*.5;}if(by>hh){lives--;bx=0;by=0;vy=-4.2;if(lives<=0){end(1);return;}}if(brokenBricks.length>=24)end(0);}
 }
 
 /// A lane-based hop game. Tap to jump; collision and progress are state-driven.
